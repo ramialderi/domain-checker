@@ -93,6 +93,24 @@ def check_domain(session: requests.Session, name: str, tld: str, timeout: float 
 
 
 def generate_names(length: int, charset_key: str):
+    """Yield names for the given charset.
+
+    For charset_key == "alnum", pure-letter combinations are yielded first
+    (in order), followed by every remaining combination that contains at
+    least one digit. This means results/available files fill up with the
+    "cleaner" letters-only domains before the letter+digit ones.
+    """
+    if charset_key == "alnum":
+        letters = CHARSETS["letters"]
+        full = CHARSETS["alnum"]
+        for combo in itertools.product(letters, repeat=length):
+            yield "".join(combo)
+        for combo in itertools.product(full, repeat=length):
+            name = "".join(combo)
+            if any(c.isdigit() for c in name):
+                yield name
+        return
+
     chars = CHARSETS[charset_key]
     for combo in itertools.product(chars, repeat=length):
         yield "".join(combo)
