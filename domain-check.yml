@@ -1,0 +1,84 @@
+name: Domain Availability Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      tlds:
+        description: "Space-separated TLDs to check"
+        required: false
+        default: "com net"
+      length:
+        description: "Label length"
+        required: false
+        default: "3"
+      charset:
+        description: "letters | digits | alnum"
+        required: false
+        default: "alnum"
+      workers:
+        description: "Concurrent requests"
+        required: false
+        default: "5"
+      delay:
+        description: "Delay in seconds between request submissions"
+        required: false
+        default: "0.3"
+      limit:
+        description: "Optional: only check first N names (leave empty to check all)"
+        required: false
+        default: ""
+  schedule:
+    # Runs daily at 00:00 UTC = 03:00 Damascus time (Syria is UTC+3
+    # year-round, no DST). GitHub's scheduler can lag a few minutes
+    # under load. Edit or remove this block if you only want manual runs.
+    - cron: "0 0 * * *"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run domain checker
+        run: |
+          ARGS="--tlds ${{ github.event.inputs.tlds || 'com net' }} \
+                --length ${{ github.event.inputs.length || '3' }} \
+                --charset ${{ github.event.inputs.charset || 'alnum' }} \
+                --workers ${{ github.event.inputs.workers || '5' }} \
+                --delay ${{ github.event.inputs.delay || '0.05' }} \
+                --output results.csv"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "Running: python domain_checker.py $ARGS"
+          python domain_checker.py $ARGS
+
+      - name: Ensure result files exist
+        if: always()
+        run: touch results.csv available_com.txt available_net.txt
+
+      - name: Rank and price available domains
+        if: always()
+        run: python rank_domains.py available_com.txt available_net.txt --output ranked_domains.csv
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: domain-check-results-${{ github.run_id }}
+          path: |
+            results.csv
+            ranked_domains.csv
+            available_*.txt
+          if-no-files-found: warn
+          retention-days: 30
