@@ -1,0 +1,74 @@
+name: Domain Availability Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      tlds:
+        description: "Space-separated TLDs to check"
+        required: false
+        default: "com net"
+      length:
+        description: "Label length"
+        required: false
+        default: "3"
+      charset:
+        description: "letters | digits | alnum"
+        required: false
+        default: "alnum"
+      workers:
+        description: "Concurrent requests"
+        required: false
+        default: "5"
+      delay:
+        description: "Delay in seconds between request submissions"
+        required: false
+        default: "0.3"
+      limit:
+        description: "Optional: only check first N names (leave empty to check all)"
+        required: false
+        default: ""
+  schedule:
+    # Runs weekly on Monday 03:00 UTC. Edit or remove if you only want
+    # manual runs via workflow_dispatch.
+    - cron: "0 3 * * 1"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run domain checker
+        run: |
+          ARGS="--tlds ${{ github.event.inputs.tlds || 'com net' }} \
+                --length ${{ github.event.inputs.length || '3' }} \
+                --charset ${{ github.event.inputs.charset || 'alnum' }} \
+                --workers ${{ github.event.inputs.workers || '5' }} \
+                --delay ${{ github.event.inputs.delay || '0.3' }} \
+                --output results.csv"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          echo "Running: python domain_checker.py $ARGS"
+          python domain_checker.py $ARGS
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: domain-check-results-${{ github.run_id }}
+          path: |
+            results.csv
+            available_*.txt
+          if-no-files-found: warn
+          retention-days: 30
