@@ -28,9 +28,10 @@ on:
         required: false
         default: ""
   schedule:
-    # Runs weekly on Monday 03:00 UTC. Edit or remove if you only want
-    # manual runs via workflow_dispatch.
-    - cron: "0 3 * * 1"
+    # Runs daily at 00:00 UTC = 03:00 Damascus time (Syria is UTC+3
+    # year-round, no DST). GitHub's scheduler can lag a few minutes
+    # under load. Edit or remove this block if you only want manual runs.
+    - cron: "0 0 * * *"
 
 jobs:
   check:
@@ -54,13 +55,21 @@ jobs:
                 --length ${{ github.event.inputs.length || '3' }} \
                 --charset ${{ github.event.inputs.charset || 'alnum' }} \
                 --workers ${{ github.event.inputs.workers || '5' }} \
-                --delay ${{ github.event.inputs.delay || '0.3' }} \
+                --delay ${{ github.event.inputs.delay || '0.05' }} \
                 --output results.csv"
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
           fi
           echo "Running: python domain_checker.py $ARGS"
           python domain_checker.py $ARGS
+
+      - name: Ensure result files exist
+        if: always()
+        run: touch results.csv available_com.txt available_net.txt
+
+      - name: Rank and price available domains
+        if: always()
+        run: python rank_domains.py available_com.txt available_net.txt --output ranked_domains.csv
 
       - name: Upload results
         if: always()
@@ -69,6 +78,7 @@ jobs:
           name: domain-check-results-${{ github.run_id }}
           path: |
             results.csv
+            ranked_domains.csv
             available_*.txt
           if-no-files-found: warn
           retention-days: 30
